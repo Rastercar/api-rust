@@ -47,7 +47,7 @@ pub struct Paginated<T> {
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[aliases(PaginatedVehicleTracker = PaginationResult<VehicleTracker>)]
-pub struct PaginationResult<T: for<'_s> ToSchema<'_s>> {
+pub struct PaginationResult<T> {
     /// Page number
     ///
     /// this is used to determine the offset used in the query
@@ -86,7 +86,7 @@ impl<'a, T: 'a> Paginated<T> {
     ) -> QueryResult<PaginationResult<U>>
     where
         Self: LoadQuery<'a, AsyncPgConnection, (U, i64)>,
-        U: std::marker::Send + for<'_s> utoipa::ToSchema<'_s>,
+        U: std::marker::Send,
     {
         let per_page = self.per_page;
         let page = self.page;

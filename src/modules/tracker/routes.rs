@@ -22,6 +22,7 @@ use axum::{
 };
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
+use futures_util::Future;
 use http::StatusCode;
 
 pub fn create_router(state: AppState) -> Router<AppState> {
@@ -143,21 +144,52 @@ pub async fn create_tracker(
     ),
 )]
 pub async fn list_trackers(
-    ValidatedQuery(query): ValidatedQuery<Pagination>,
+    ValidatedQuery(p): ValidatedQuery<Pagination>,
     OrganizationId(org_id): OrganizationId,
-    DbConnection(mut conn): DbConnection,
+    conn: DbConnection,
 ) -> Result<Json<PaginationResult<VehicleTracker>>, (StatusCode, SimpleError)> {
+    // TODO: ver esse erro.
+    // https://github.com/rust-lang/rust/issues/102211
+    //
+    // ocorre somemte com load_with_pagination
+    //
+    // por causa do
+    // U: std::marker::Send
+    //
+    // see:
+    // https://github.com/rust-lang/rust/issues/102211#issuecomment-1513931928
+    let f = xd(conn);
+    let fut = assert_send(f);
+    let result = fut.await.or(Err(internal_error_response()))?;
+
+    Ok(Json(result))
+}
+
+async fn xd(
+    DbConnection(mut conn): DbConnection,
+) -> Result<PaginationResult<VehicleTracker>, (StatusCode, SimpleError)> {
     use crate::database::pagination::*;
 
-    let result = vehicle_tracker::dsl::vehicle_tracker
+    let mut query = vehicle_tracker::dsl::vehicle_tracker.into_boxed();
+
+    query = query.filter(vehicle_tracker::dsl::vehicle_id.eq(1));
+
+    let result = query
         .order(vehicle_tracker::id.asc())
-        .filter(vehicle_tracker::dsl::organization_id.eq(org_id))
+        .filter(vehicle_tracker::dsl::organization_id.eq(1))
         .select(VehicleTracker::as_select())
-        .paginate(query.page as i64)
-        .per_page(query.page_size as i64)
+        .paginate(1 as i64)
+        .per_page(1 as i64)
         .load_with_pagination::<VehicleTracker>(&mut conn)
         .await
         .or(Err(internal_error_response()))?;
 
-    Ok(Json(result))
+    Ok(result)
+}
+
+// TODO:
+fn assert_send<'u, R>(
+    fut: impl 'u + Send + Future<Output = R>,
+) -> impl 'u + Send + Future<Output = R> {
+    fut
 }
